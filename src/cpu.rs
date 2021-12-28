@@ -1,7 +1,6 @@
 use crate::opcode::*;
-use crate::ops::combine_u8_to_u16;
+use crate::ops::{combine_u8_to_u16, split_u16_to_u8};
 use std::collections::HashMap;
-use wrapping_arithmetic::wrappit;
 
 bitflags! {
     /// # Status Register (P) http://wiki.nesdev.com/w/index.php/Status_flags
@@ -100,6 +99,209 @@ impl CPU {
         }
     }
 
+    pub fn run(&mut self) {
+        let ref opcodes: HashMap<u8, &'static OpCode> = *OPCODES_MAP;
+
+        loop {
+            let code = self.mem_read(self.program_counter);
+            self.program_counter += 1;
+            let program_counter_state = self.program_counter;
+
+            let opcode = opcodes
+                .get(&code)
+                .expect(&format!("OpCode {:x} is not recognized", code));
+
+            match code {
+                /* LDY */
+                LDY_IMMEDIATE | LDY_ZERO_PAGE | LDY_ZERO_PAGE_X | LDY_ABSOLUTE | LDY_ABSOLUTE_X => {
+                    self.ldy(&opcode.mode);
+                }
+                /* LDX */
+                LDX_IMMEDIATE | LDX_ZERO_PAGE | LDX_ZERO_PAGE_Y | LDX_ABSOLUTE | LDX_ABSOLUTE_Y => {
+                    self.ldx(&opcode.mode);
+                }
+                /* LDA */
+                LDA_IMMEDIATE | LDA_ZERO_PAGE | LDA_ZERO_PAGE_X | LDA_ABSOLUTE | LDA_ABSOLUTE_X
+                | LDA_ABSOLUTE_Y | LDA_INDIRECT_X | LDA_INDIRECT_Y => {
+                    self.lda(&opcode.mode);
+                }
+
+                /* STA */
+                STA_ZERO_PAGE | STA_ZERO_PAGE_X | STA_ABSOLUTE | STA_ABSOLUTE_X
+                | STA_ABSOLUTE_Y | STA_INDIRECT_X | STA_INDIRECT_Y => {
+                    self.sta(&opcode.mode);
+                }
+                /* STX */
+                STX_ZERO_PAGE | STX_ZERO_PAGE_Y | STX_ABSOLUTE => {
+                    self.stx(&opcode.mode);
+                }
+
+                /* STY */
+                STY_ZERO_PAGE | STY_ZERO_PAGE_X | STY_ABSOLUTE => {
+                    self.sty(&opcode.mode);
+                }
+
+                TAX => self.tax(),
+                INX => self.inx(),
+                INY => self.iny(),
+                // TXA => self.txa(),
+                DEX => self.dex(),
+                DEY => self.dey(),
+                NOP => { /* NOP */ }
+                BRK => return,
+                CLD => self.status.remove(CpuFlags::DECIMAL_MODE),
+                CLI => self.status.remove(CpuFlags::INTERRUPT_DISABLE),
+                CLV => self.status.remove(CpuFlags::OVERFLOW),
+                CLC => self.clear_carry_flag(),
+                SEC => self.set_carry_flag(),
+                SEI => self.status.insert(CpuFlags::INTERRUPT_DISABLE),
+                SED => self.status.insert(CpuFlags::DECIMAL_MODE),
+                PHA => self.stack_push(self.register_a),
+                JSR => {
+                    self.stack_push_u16(self.program_counter + 2 - 1);
+                    let target_address = self.mem_read_u16(self.program_counter);
+                    self.program_counter = target_address
+                }
+                RTS => {
+                    self.program_counter = self.stack_pop_u16() + 1;
+                }
+                RTI => {
+                    self.status.bits = self.stack_pop();
+                    self.status.remove(CpuFlags::BREAK);
+                    self.status.insert(CpuFlags::BREAK2);
+
+                    self.program_counter = self.stack_pop_u16();
+                }
+                _ => todo!(),
+            }
+
+            if program_counter_state == self.program_counter {
+                self.program_counter += (opcode.len - 1) as u16;
+            }
+        }
+    }
+
+    fn sta(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_a);
+    }
+
+    fn stx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_x);
+    }
+
+    fn sty(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_y);
+    }
+
+    fn lda(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(&mode);
+        let data = self.mem_read(addr);
+        self.set_register(Register::A, data);
+    }
+
+    fn ldy(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let data = self.mem_read(addr);
+        self.set_register(Register::Y, data);
+    }
+
+    fn ldx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let data = self.mem_read(addr);
+        self.set_register(Register::X, data);
+    }
+
+    fn tax(&mut self) {
+        self.set_register(Register::X, self.register_a);
+    }
+
+    fn inx(&mut self) {
+        self.register_x = self.register_x.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    fn iny(&mut self) {
+        self.register_y = self.register_y.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    fn dey(&mut self) {
+        self.register_y = self.register_y.wrapping_sub(1);
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    fn dex(&mut self) {
+        self.register_x = self.register_x.wrapping_sub(1);
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    fn stack_pop(&mut self) -> u8 {
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        self.mem_read((STACK as u16) + self.stack_pointer as u16)
+    }
+
+    fn stack_push(&mut self, data: u8) {
+        self.mem_write((STACK as u16) + self.stack_pointer as u16, data);
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1)
+    }
+
+    fn stack_push_u16(&mut self, data: u16) {
+        let (hi, lo) = split_u16_to_u8(data);
+        self.stack_push(hi);
+        self.stack_push(lo);
+    }
+
+    fn stack_pop_u16(&mut self) -> u16 {
+        let lo = self.stack_pop();
+        let hi = self.stack_pop();
+
+        combine_u8_to_u16(hi, lo)
+    }
+
+    pub fn load_and_run(&mut self, program: Vec<u8>) {
+        self.load(program);
+        self.reset();
+        self.run()
+    }
+
+    pub fn reset(&mut self) {
+        self.register_a = 0;
+        self.register_x = 0;
+        self.register_y = 0;
+        self.stack_pointer = STACK_RESET;
+        self.status = CpuFlags::from_bits_truncate(0b100100);
+
+        self.program_counter = self.mem_read_u16(0xFFFC);
+    }
+
+    pub fn load(&mut self, program: Vec<u8>) {
+        // We load program code into memory, starting at 0x8000 address.
+        // [0x8000 .. 0xFFFF] is reserved for Program ROM,
+        // and we can assume that the instructions stream should start somewhere in this space (not necessarily at 0x8000).
+        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
+        self.mem_write_u16(0xFFFC, 0x8000);
+    }
+
+    fn set_register(&mut self, register: Register, value: u8) {
+        match register {
+            Register::A => {
+                self.register_a = value;
+                self.update_zero_and_negative_flags(self.register_a);
+            }
+            Register::X => {
+                self.register_x = value;
+                self.update_zero_and_negative_flags(self.register_x);
+            }
+            Register::Y => {
+                self.register_y = value;
+                self.update_zero_and_negative_flags(self.register_y);
+            }
+        }
+    }
+
     fn update_zero_and_negative_flags(&mut self, result: u8) {
         if result == 0 {
             self.status.insert(CpuFlags::ZERO);
@@ -175,149 +377,6 @@ impl CPU {
             }
         }
     }
-
-    pub fn run(&mut self) {
-        let ref opcodes: HashMap<u8, &'static OpCode> = *OPCODES_MAP;
-
-        loop {
-            let code = self.mem_read(self.program_counter);
-            self.program_counter += 1;
-            let program_counter_state = self.program_counter;
-
-            let opcode = opcodes
-                .get(&code)
-                .expect(&format!("OpCode {:x} is not recognized", code));
-
-            match code {
-                /* LDY */
-                LDY_IMMEDIATE | LDY_ZERO_PAGE | LDY_ZERO_PAGE_X | LDY_ABSOLUTE | LDY_ABSOLUTE_X => {
-                    self.ldy(&opcode.mode);
-                }
-                /* LDX */
-                LDX_IMMEDIATE | LDX_ZERO_PAGE | LDX_ZERO_PAGE_Y | LDX_ABSOLUTE | LDX_ABSOLUTE_Y => {
-                    self.ldx(&opcode.mode);
-                }
-                /* LDA */
-                LDA_IMMEDIATE | LDA_ZERO_PAGE | LDA_ZERO_PAGE_X | LDA_ABSOLUTE | LDA_ABSOLUTE_X
-                | LDA_ABSOLUTE_Y | LDA_INDIRECT_X | LDA_INDIRECT_Y => {
-                    self.lda(&opcode.mode);
-                }
-
-                /* STA */
-                STA_ZERO_PAGE | STA_ZERO_PAGE_X | STA_ABSOLUTE | STA_ABSOLUTE_X
-                | STA_ABSOLUTE_Y | STA_INDIRECT_X | STA_INDIRECT_Y => {
-                    self.sta(&opcode.mode);
-                }
-                /* STX */
-                STX_ZERO_PAGE | STX_ZERO_PAGE_Y | STX_ABSOLUTE => {
-                    self.stx(&opcode.mode);
-                }
-
-                /* STY */
-                STY_ZERO_PAGE | STY_ZERO_PAGE_X | STY_ABSOLUTE => {
-                    self.sty(&opcode.mode);
-                }
-
-                TAX => self.tax(),
-                INX => self.inx(),
-                NOP => { /* NOP */ }
-                BRK => return,
-                _ => todo!(),
-            }
-
-            if program_counter_state == self.program_counter {
-                self.program_counter += (opcode.len - 1) as u16;
-            }
-        }
-    }
-
-    pub fn load_and_run(&mut self, program: Vec<u8>) {
-        self.load(program);
-        self.reset();
-        self.run()
-    }
-
-    pub fn reset(&mut self) {
-        self.register_a = 0;
-        self.register_x = 0;
-        self.register_y = 0;
-        self.stack_pointer = STACK_RESET;
-        self.status = CpuFlags::from_bits_truncate(0b100100);
-
-        self.program_counter = self.mem_read_u16(0xFFFC);
-    }
-
-    pub fn load(&mut self, program: Vec<u8>) {
-        // We load program code into memory, starting at 0x8000 address.
-        // [0x8000 .. 0xFFFF] is reserved for Program ROM,
-        // and we can assume that the instructions stream should start somewhere in this space (not necessarily at 0x8000).
-        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, 0x8000);
-    }
-
-    fn set_register(&mut self, register: Register, value: u8) {
-        match register {
-            Register::A => {
-                self.register_a = value;
-                self.update_zero_and_negative_flags(self.register_a);
-            }
-            Register::X => {
-                self.register_x = value;
-                self.update_zero_and_negative_flags(self.register_x);
-            }
-            Register::Y => {
-                self.register_y = value;
-                self.update_zero_and_negative_flags(self.register_y);
-            }
-        }
-    }
-
-    fn sta(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        self.mem_write(addr, self.register_a);
-    }
-
-    fn stx(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        self.mem_write(addr, self.register_x);
-    }
-
-    fn sty(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        self.mem_write(addr, self.register_y);
-    }
-
-    fn lda(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(&mode);
-        let data = self.mem_read(addr);
-        self.set_register(Register::A, data);
-    }
-
-    fn ldy(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let data = self.mem_read(addr);
-        self.set_register(Register::Y, data);
-    }
-
-    fn ldx(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let data = self.mem_read(addr);
-        self.set_register(Register::X, data);
-    }
-
-    fn tax(&mut self) {
-        self.set_register(Register::X, self.register_a);
-    }
-
-    #[wrappit]
-    fn inx(&mut self) {
-        // to protect against register overflows, we must wrap values
-        // There's a rust internal method to help with this, however it's confusing and less readable
-        // to demonstrate rust procedural macro usage a dependecy was used to make this more readable
-        // https://crates.io/crates/wrapping_arithmetic
-        self.register_x = self.register_x + 1;
-        self.update_zero_and_negative_flags(self.register_x);
-    }
 }
 
 #[cfg(test)]
@@ -363,6 +422,42 @@ mod test {
         cpu.run();
 
         assert_eq!(cpu.register_x, 1)
+    }
+
+    #[test]
+    fn test_iny_overflow() {
+        let program = vec![INY, INY, BRK];
+        let mut cpu = CPU::new();
+        cpu.load(program);
+        cpu.reset();
+        cpu.set_register(Register::Y, 0xff);
+        cpu.run();
+
+        assert_eq!(cpu.register_y, 1)
+    }
+
+    #[test]
+    fn test_dex_overflow() {
+        let program = vec![DEX, BRK];
+        let mut cpu = CPU::new();
+        cpu.load(program);
+        cpu.reset();
+        cpu.set_register(Register::X, 0x00);
+        cpu.run();
+
+        assert_eq!(cpu.register_x, 0xff)
+    }
+
+    #[test]
+    fn test_dey_overflow() {
+        let program = vec![DEY, BRK];
+        let mut cpu = CPU::new();
+        cpu.load(program);
+        cpu.reset();
+        cpu.set_register(Register::Y, 0x00);
+        cpu.run();
+
+        assert_eq!(cpu.register_y, 0xff)
     }
 
     #[test]
