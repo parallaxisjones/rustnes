@@ -190,35 +190,38 @@ impl CPU {
 
             match code {
                 /* LDY */
-                0xa0 | 0xa4 | 0xb4 | 0xac | 0xbc => {
+                LDY_IMMEDIATE | LDY_ZERO_PAGE | LDY_ZERO_PAGE_X | LDY_ABSOLUTE | LDY_ABSOLUTE_X => {
                     self.ldy(&opcode.mode);
                 }
                 /* LDX */
-                0xa2 | 0xa6 | 0xb6 | 0xae | 0xbe => {
+                LDX_IMMEDIATE | LDX_ZERO_PAGE | LDX_ZERO_PAGE_Y | LDX_ABSOLUTE | LDX_ABSOLUTE_Y => {
                     self.ldx(&opcode.mode);
                 }
                 /* LDA */
-                0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
+                LDA_IMMEDIATE | LDA_ZERO_PAGE | LDA_ZERO_PAGE_X | LDA_ABSOLUTE | LDA_ABSOLUTE_X
+                | LDA_ABSOLUTE_Y | LDA_INDIRECT_X | LDA_INDIRECT_Y => {
                     self.lda(&opcode.mode);
                 }
 
                 /* STA */
-                0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
+                STA_ZERO_PAGE | STA_ZERO_PAGE_X | STA_ABSOLUTE | STA_ABSOLUTE_X
+                | STA_ABSOLUTE_Y | STA_INDIRECT_X | STA_INDIRECT_Y => {
                     self.sta(&opcode.mode);
                 }
                 /* STX */
-                0x86 | 0x96 | 0x8e => {
+                STX_ZERO_PAGE | STX_ZERO_PAGE_Y | STX_ABSOLUTE => {
                     self.stx(&opcode.mode);
                 }
 
                 /* STY */
-                0x84 | 0x94 | 0x8c => {
+                STY_ZERO_PAGE | STY_ZERO_PAGE_X | STY_ABSOLUTE => {
                     self.sty(&opcode.mode);
                 }
 
-                0xAA => self.tax(),
-                0xe8 => self.inx(),
-                0x00 => return,
+                TAX => self.tax(),
+                INX => self.inx(),
+                NOP => { /* NOP */ }
+                BRK => return,
                 _ => todo!(),
             }
 
