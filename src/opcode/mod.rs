@@ -229,21 +229,53 @@ lazy_static! {
     };
 }
 
-/* no mode*/
-/* Transfer A to X */
-pub const TAX: u8 = 0xaa;
-pub const TAY: u8 = 0xa8;
-pub const TSX: u8 = 0xba;
-pub const TXA: u8 = 0x8a;
-pub const TXS: u8 = 0x9a;
-pub const TYA: u8 = 0x98;
-
 pub const NOP: u8 = 0xea;
 /* Break */
 pub const BRK: u8 = 0x00;
 /* Increment Value in Register X */
-pub const INX: u8 = 0xe8;
+
+///Register Instruction
+///
+///Affect Flags: N Z
+///
+///These instructions are implied mode, have a length of one byte and require two machine cycles.
+///
+///INY (INcrement Y)        $C8
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#INY
 pub const INY: u8 = 0xc8;
+///Register Instruction
+///
+///Affect Flags: N Z
+///
+///These instructions are implied mode, have a length of one byte and require two machine cycles.
+///
+///INX (INcrement X)        $E8
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#INX
+pub const INX: u8 = 0xe8;
+///Register Instruction
+///
+///Affect Flags: N Z
+///
+///These instructions are implied mode, have a length of one byte and require two machine cycles.
+///
+///TAX (Transfer A to X)    $AA
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#TAX
+pub const TAX: u8 = 0xaa;
+///TAY (Transfer A to Y)    $A8
+pub const TAY: u8 = 0xa8;
+pub const TSX: u8 = 0xba;
+///TXA (Transfer X to A)    $8A
+pub const TXA: u8 = 0x8a;
+pub const TXS: u8 = 0x9a;
+///TYA (Transfer Y to A)    $98
+pub const TYA: u8 = 0x98;
+
+///DEX (DEcrement X)        $CA
+///DEY (DEcrement Y)        $88
+
 /* modal op codes */
 pub const LDA_IMMEDIATE: u8 = 0xa9;
 pub const LDA_ZERO_PAGE: u8 = 0xa5;
@@ -273,13 +305,65 @@ pub const STA_ABSOLUTE_X: u8 = 0x9d;
 pub const STA_ABSOLUTE_Y: u8 = 0x99;
 pub const STA_INDIRECT_X: u8 = 0x81;
 pub const STA_INDIRECT_Y: u8 = 0x91;
-
+/// STX (STore X register)
+///
+/// Affects Flags: none
+///
+/// MODE           SYNTAX       HEX LEN TIM
+///
+/// Zero Page     STX $44       $86  2   3
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#STX
 pub const STX_ZERO_PAGE: u8 = 0x86;
+/// STX (STore X register)
+///
+/// Affects Flags: none
+///
+/// MODE           SYNTAX       HEX LEN TIM
+///
+/// Zero Page,Y   STX $44,Y     $96  2   4
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#STX
 pub const STX_ZERO_PAGE_Y: u8 = 0x96;
+/// STX (STore X register)
+///
+/// Affects Flags: none
+///
+/// MODE           SYNTAX       HEX LEN TIM
+///
+/// Absolute      STX $4400     $8E  3   4
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#STX
 pub const STX_ABSOLUTE: u8 = 0x8e;
-
+/// STY (STore Y register)
+///
+/// Affects Flags: none
+///
+/// MODE           SYNTAX       HEX LEN TIM
+///
+/// Zero Page     STY $44       $84  2   3
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#STY
 pub const STY_ZERO_PAGE: u8 = 0x84;
+/// STY (STore Y register)
+///
+/// Affects Flags: none
+///
+/// MODE           SYNTAX       HEX LEN TIM
+///
+/// Zero Page,X   STY $44,X     $94  2   4
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#STY
 pub const STY_ZERO_PAGE_X: u8 = 0x94;
+/// STY (STore Y register)
+///
+/// Affects Flags: none
+///
+/// MODE           SYNTAX       HEX LEN TIM
+///
+/// Absolute      STY $4400     $8C  3   4
+///
+/// http://www.6502.org/tutorials/6502opcodes.html#STY
 pub const STY_ABSOLUTE: u8 = 0x8c;
 
 pub const ADC_IMMEDIATE: u8 = 0x69;
