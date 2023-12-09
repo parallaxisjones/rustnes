@@ -1,12 +1,19 @@
 use crate::cpu::AddressingMode;
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
+#[derive(Debug)]
 pub struct OpCode {
     pub code: u8,
     pub mnemonic: &'static str,
     pub len: u8,
     pub cycles: u8,
     pub mode: AddressingMode,
+}
+
+impl Display for OpCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({:#04X?}, {}, {})", self.code, self.mnemonic, self.mode)
+    }
 }
 
 impl OpCode {

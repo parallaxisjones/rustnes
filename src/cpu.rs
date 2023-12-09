@@ -1,6 +1,9 @@
+use log::debug;
+
 use crate::opcode::*;
 use crate::ops::*;
 use std::collections::HashMap;
+use std::fmt::Display;
 
 bitflags! {
     /// # Status Register (P) http://wiki.nesdev.com/w/index.php/Status_flags
@@ -58,6 +61,23 @@ pub enum AddressingMode {
     NoneAddressing,
 }
 
+impl Display for AddressingMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            &AddressingMode::Absolute => write!(f, "Absolute"),
+            &AddressingMode::Immediate => write!(f, "Immediate"),
+            &AddressingMode::ZeroPage_X => write!(f, "ZeroPage_X"),
+            &AddressingMode::ZeroPage_Y => write!(f, "ZeroPage_Y"),
+            &AddressingMode::Absolute_X => write!(f, "Absolute_X"),
+            &AddressingMode::Absolute_Y => write!(f, "Absolute_Y"),
+            &AddressingMode::Indirect_X => write!(f, "Indirect_X"),
+            &AddressingMode::Indirect_Y => write!(f, "Indirect_Y"),
+            &AddressingMode::NoneAddressing => write!(f, "None"),
+            &AddressingMode::ZeroPage => write!(f, "ZeroPage"),
+        }
+    }
+}
+
 pub trait Mem {
     fn mem_read(&self, addr: u16) -> u8;
 
@@ -83,6 +103,7 @@ impl Mem for CPU {
 
     fn mem_write(&mut self, addr: u16, data: u8) {
         self.memory[addr as usize] = data;
+        debug!("wrote {:#04X?} at {:#04X?}", data, addr)
     }
 }
 
@@ -118,7 +139,7 @@ impl CPU {
             let opcode = opcodes
                 .get(&code)
                 .expect(&format!("OpCode {:x} is not recognized", code));
-
+            debug!("op: {}", opcode);
             match code {
                 /* LDY */
                 LDY_IMMEDIATE | LDY_ZERO_PAGE | LDY_ZERO_PAGE_X | LDY_ABSOLUTE | LDY_ABSOLUTE_X => {
@@ -246,9 +267,14 @@ impl CPU {
                 SED => self.status.insert(CpuFlags::DECIMAL_MODE),
                 PHA => self.stack_push(self.register_a),
                 JSR => {
+                    debug!("JSR");
+                    debug!("stack pointer {:4X?}", self.stack_pointer);
+                    debug!("program counter {:4X?}", self.program_counter);
                     self.stack_push_u16(self.program_counter + 2 - 1);
                     let target_address = self.mem_read_u16(self.program_counter);
-                    self.program_counter = target_address
+                    self.program_counter = target_address;
+                    debug!("stack pointer {:4X?}", self.stack_pointer);
+                    debug!("program counter {:4X?}", self.program_counter);
                 }
                 RTS => {
                     self.program_counter = self.stack_pop_u16() + 1;
@@ -667,9 +693,8 @@ impl CPU {
     }
 
     fn stack_push_u16(&mut self, data: u16) {
-        let (hi, lo) = split_u16_to_u8(data);
-        self.stack_push(hi);
-        self.stack_push(lo);
+        self.stack_push(((data >> 8) & 0xff) as u8);
+        self.stack_push((data & 0xff) as u8);
     }
 
     fn stack_pop_u16(&mut self) -> u16 {
@@ -699,8 +724,10 @@ impl CPU {
         // We load program code into memory, starting at 0x8000 address.
         // [0x8000 .. 0xFFFF] is reserved for Program ROM,
         // and we can assume that the instructions stream should start somewhere in this space (not necessarily at 0x8000).
+        debug!("program loaded");
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
         self.mem_write_u16(0xFFFC, 0x8000);
+        debug!("program loaded: {}", program.len());
     }
 
     fn set_register(&mut self, register: Register, value: u8) {
