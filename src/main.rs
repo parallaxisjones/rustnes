@@ -117,7 +117,7 @@ fn main() {
 
 
     let mut cpu = CPU::new();
-    cpu.load(snake_game_code);
+    cpu.load(snake_game_code());
     cpu.reset();
     let mut screen_state = [0 as u8; 32 * 3 * 32];
     let mut rng = rand::thread_rng();
